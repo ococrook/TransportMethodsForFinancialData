@@ -1,0 +1,170 @@
+---
+title: "Transportation Methods"
+author: "Oliver M. Crook"
+date: "17 December 2018"
+output: html_document
+---
+
+Get the required functions from R files.
+```{r,}
+source("CuturiMultivariateTLP.R")
+source("CuturiOT.R")
+```
+
+As an example we first simulate some multrivariate AR models
+```{r,}
+require(mAr) ## simulate from mulativariate AR models
+```
+
+
+The following code should sample two AR models 3 outputs along a discrete grid of length 50.
+```{r,}
+ar1 <- armodel1(1)
+ar2 <- armodel1(1)
+```
+
+Visualise each AR model
+```{r,}
+matplot(t(ar1[,,1]), type = "l", lwd = 3)
+matplot(t(ar2[,,1]), type = "l", lwd = 3)
+```
+
+Let us create noisy versions of these AR model. In total we now have 60 different AR models
+```{r,}
+ar1 <- addNoise(30, ar1)
+ar2 <- addNoise(30, ar2)
+```
+
+The above is currently an array, below transforms the data so they are in lists.
+```{r,}
+ar1 <- lapply(seq(dim(ar1)[3]), function(x) ar1[ , , x])
+ar2 <- lapply(seq(dim(ar2)[3]), function(x) ar2[ , , x])
+```
+
+
+Even though these came from the same AR model - the noise is quite strong.
+```{r,}
+matplot(t(ar1[[1]]), type = "l", lwd = 3)
+matplot(t(ar1[[2]]), type = "l", lwd = 3)
+matplot(t(ar1[[3]]), type = "l", lwd = 3)
+
+```
+
+The following sets-up applying linear TLP
+```{r,}
+ar <- c(ar1, ar2) # combine all signals into one list
+mu <- rep(1, 50)/50 # the base measure will be the uniform measure on the line (not need to change in application)
+nu <- mu # also base measure is uniform
+g <- Reduce("+", ar) / length(ar) # mean across lists (this is the reference measure)
+```
+
+The following function compute the transportation maps we need to apply linear transportation LP. epsilon made need changing
+due to numerical issue, but we want it to be small as possible. Iter might need increasing if algorithm doesn't converge.
+```{r, message=F}
+resAr <- lapply(ar, function(x)CuturiMultivariateTLP(mu = mu,
+                                                     f = x,
+                                                     nu = nu,
+                                                     g = g,
+                                                     p = 2,
+                                                     eps = 0.1,
+                                                     iter = 1000))
+```
+
+Now we can use the following code to compute the linear embedding
+
+```{r,}
+embedAr <- linearEmbedTLP(resAr,
+                          sigma = nu,
+                          data = ar,
+                          h = g,
+                          p = 2)
+```
+
+We can now apply standard statistical method to the data
+```{r,}
+pcaAr <- prcomp(t(embedAr))
+plot(pcaAr$x[,1], pcaAr$x[,2], col = c(rep(1,30), rep(2,30)), pch = 19, cex = 2)
+```
+
+To apply optimal transport / linear optimal transport we need to normalise to get positivity
+and signals need to integrate to 1. Also mutlitvariate signals not allowed so average across all signals.
+```{r,}
+
+ar1OT <- lapply(ar1, function(x) colMeans((x - min(x) + 0.01)/sum((x - min(x) + 0.01))))
+ar2OT <- lapply(ar2, function(x) colMeans((x - min(x) + 0.01)/sum((x - min(x) + 0.01))))
+
+
+arOT <- c(ar1OT, ar2OT)
+```
+
+Get reference signal by averaging
+```{r,}
+sigma <- Reduce("+", arOT) / length(arOT) # mean across lists
+```
+
+Apply Linear OT techniques as before may need to change eps and iter for stability.
+```{r, message = F}
+resArOT <- lapply(arOT, function(x)CuturiOT(mu = x,
+                                            nu = sigma,
+                                            p = 2,
+                                            eps = 0.01,
+                                            iter = 1000))
+
+E <- linearEmbedOT(listTransportMap = resArOT,
+                   sigma = sigma)
+
+```
+
+```{r,}
+pcaE <- prcomp(t(E))
+plot(pcaE$x[,1], pcaE$x[,2], col = c(rep(1,30), rep(2,30)), pch = 19, cex = 2)
+```
+
+The two code chunks below compute the normal OT and TLP codes. Note there is no reason
+that these should be close to the above distances because they rely on an approximation.
+These distance also depend on the stability of cuturi's method which could be quite
+different in each setting. Best to assume that these are really are just different distances
+being applied but ours our motivated by the ones create below. If it is possible to compute the below on your
+example it would be helpful if you could time them?
+
+Applying Transportation LP (not linear version)
+```{r cache=T, message = F}
+pairwiseTLP <- matrix(0, 60, 60)
+
+for (j in 1:59) {
+  for (i in (j + 1):60) {
+  
+    out <- CuturiMultivariateTLP(mu,
+                                 ar[[j]],
+                                 nu,
+                                 ar[[i]],
+                                 p = 2,
+                                 eps = 0.5,
+                                 iter = 1000)
+    pairwiseTLP[i, j] <- pairwiseTLP[j, i] <- out$distTLP
+    
+  }
+}
+```
+
+
+Applying Optimal Transport (not linear version)
+```{r cache=T, message = F}
+
+pairwiseOT <- matrix(0, 60, 60)
+
+for (j in 1:59) {
+  for (i in (j + 1):60) {
+    
+    out <- CuturiOT(mu = arOT[[j]],
+                    nu = arOT[[i]],
+                     p = 2,
+                   eps = 0.5,
+                  iter = 1000)
+   
+     pairwiseOT[i, j] <- pairwiseOT[j, i] <- out$distOT
+    
+  }
+}
+```
+
