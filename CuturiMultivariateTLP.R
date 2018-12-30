@@ -75,8 +75,13 @@ linearEmbedTLP <- function(listTransportMap,
   m <- nrow(data[[1]])
 
   E <- sapply(listTransportMap, function(x) matrix((x$TransportMap - diag(1, N)), N, N) %*% as.vector(t) * sigma ^ (1/p))
-  coord <- lapply(listTransportMap, function(x) t(matrix(rep(x$TransportMap %*% as.vector(t), m), N, m)))
-  data <- Map("*", data, coord)
+  coord <- lapply(listTransportMap, function(x) t(x$TransportMap %*% as.vector(t)))
+  
+  for (j in seq.int(N)) {
+    for (k in seq.int(m)) {
+    data[[j]][k, ] <- interp1(t, data[[j]][k, ], coord[[j]], extrap = TRUE, method = "spline")
+    }  
+  }
   funE <- sapply(data, function(x) (x  - h) * sigma ^ (1/p))
   linearEmbed <- rbind(E, funE)
 

@@ -7,8 +7,10 @@ output: html_document
 
 Get the required functions from R files.
 ```{r,}
+set.seed(2)
 source("CuturiMultivariateTLP.R")
 source("CuturiOT.R")
+require(signal)
 ```
 
 As an example we first simulate some multrivariate AR models
